@@ -1,4 +1,5 @@
 const User = require('../models/User.model');
+const Workspace = require('../models/Workspace.model');
 const { validationResult } = require('express-validator');
 
 /**
@@ -32,6 +33,13 @@ exports.register = async (req, res, next) => {
       name,
       email,
       password
+    });
+
+    // Create default workspace
+    await Workspace.create({
+      name: `${name}'s Workspace`,
+      owner: user._id,
+      members: [{ user: user._id, role: 'admin' }]
     });
 
     // Generate token

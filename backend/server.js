@@ -88,13 +88,6 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai', aiRoutes);
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    status: 'error',
-    message: `Route ${req.originalUrl} not found`
-  });
-});
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
@@ -106,15 +99,10 @@ initializeSocketHandlers(io);
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
   console.log(`
-╔═══════════════════════════════════════════════════════╗
-║                                                       ║
-║   🚀 Advanced Kanban Server Running                  ║
-║                                                       ║
-║   📡 Port: ${PORT}                                    ║
-║   🌍 Environment: ${process.env.NODE_ENV || 'development'}              ║
-║   📅 Started: ${new Date().toLocaleString()}         ║
-║                                                       ║
-╚═══════════════════════════════════════════════════════╝
+    🚀 Advanced Kanban Server Running                                                                         
+     📡 Port: ${PORT}                                    
+     🌍 Environment: ${process.env.NODE_ENV || 'development'} 
+     📅 Started: ${new Date().toLocaleString()}
   `);
 });
 

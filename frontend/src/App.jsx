@@ -7,6 +7,7 @@ import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
+import LandingPage from './pages/LandingPage';
 import NotFound from './pages/NotFound';
 
 // Protected Route Component
@@ -36,7 +37,17 @@ function App() {
     <Router>
       <div className="min-h-screen bg-background">
         <Routes>
-          {/* Public Routes */}
+          {/* Landing Page */}
+          <Route
+            path="/"
+            element={
+              <PublicRoute>
+                <LandingPage />
+              </PublicRoute>
+            }
+          />
+
+          {/* Auth Routes */}
           <Route
             path="/login"
             element={
@@ -71,9 +82,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
-          {/* Default Route */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
           {/* 404 Route */}
           <Route path="*" element={<NotFound />} />
