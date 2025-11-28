@@ -20,9 +20,12 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
-import { Plus, MoreHorizontal, Calendar, Paperclip, MessageSquare, Loader2 } from 'lucide-react';
+import { Plus, MoreHorizontal, Calendar, Paperclip, MessageSquare, Loader2, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
+import Modal from '../components/Modal';
+import socketService from '../services/socket';
+import CardModal from '../components/CardModal';
 
 // --- Components ---
 
@@ -48,7 +51,7 @@ const Card = ({ card, onClick }) => {
             style={style}
             {...attributes}
             {...listeners}
-            onClick={onClick}
+            onClick={() => onClick(card)}
             className={`bg-white p-3 rounded-lg shadow-sm border border-gray-200 mb-2 cursor-pointer hover:shadow-md transition-all group ${isDragging ? 'ring-2 ring-purple-500 rotate-2' : ''}`}
         >
             <div className="flex justify-between items-start mb-2">
@@ -104,7 +107,7 @@ const Card = ({ card, onClick }) => {
     );
 };
 
-const Column = ({ column, cards }) => {
+const Column = ({ column, cards, onAddCard, onCardClick, onDeleteColumn }) => {
     const {
         attributes,
         listeners,
@@ -141,11 +144,17 @@ const Column = ({ column, cards }) => {
                     </span>
                 </div>
                 <div className="flex items-center gap-1">
-                    <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded">
+                    <button
+                        onClick={() => onAddCard(column._id)}
+                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                    >
                         <Plus className="w-4 h-4" />
                     </button>
-                    <button className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded">
-                        <MoreHorizontal className="w-4 h-4" />
+                    <button
+                        onClick={() => onDeleteColumn(column._id)}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                    >
+                        <Trash2 className="w-4 h-4" />
                     </button>
                 </div>
             </div>
@@ -155,7 +164,7 @@ const Column = ({ column, cards }) => {
                 <SortableContext items={cards.map(c => c._id)} strategy={verticalListSortingStrategy}>
                     <div className="space-y-2 min-h-[10px]">
                         {cards.map(card => (
-                            <Card key={card._id} card={card} />
+                            <Card key={card._id} card={card} onClick={onCardClick} />
                         ))}
                     </div>
                 </SortableContext>
@@ -163,7 +172,10 @@ const Column = ({ column, cards }) => {
 
             {/* Add Card Button */}
             <div className="p-2 pt-0">
-                <button className="w-full py-2 flex items-center justify-center gap-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200/50 rounded-lg text-sm font-medium transition-colors">
+                <button
+                    onClick={() => onAddCard(column._id)}
+                    className="w-full py-2 flex items-center justify-center gap-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200/50 rounded-lg text-sm font-medium transition-colors"
+                >
                     <Plus className="w-4 h-4" />
                     Add Card
                 </button>
@@ -182,6 +194,16 @@ const Board = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [activeDragItem, setActiveDragItem] = useState(null);
 
+    // Modal States
+    const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+    const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+    const [newColumnTitle, setNewColumnTitle] = useState('');
+    const [newCardTitle, setNewCardTitle] = useState('');
+    const [selectedColumnId, setSelectedColumnId] = useState(null);
+
+    // Card Details Modal State
+    const [selectedCardId, setSelectedCardId] = useState(null);
+
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: {
@@ -195,6 +217,51 @@ const Board = () => {
 
     useEffect(() => {
         fetchBoardData();
+
+        // Connect to socket
+        socketService.connect();
+        if (boardId) {
+            socketService.joinBoard(boardId);
+        }
+
+        // Listen for events
+        socketService.on('card:created', ({ card }) => {
+            setCards(prev => [...prev, card]);
+        });
+
+        socketService.on('card:moved', ({ cardId, columnId, position }) => {
+            setCards(prev => {
+                return prev.map(c => {
+                    if (c._id === cardId) {
+                        return { ...c, column: columnId, position };
+                    }
+                    return c;
+                });
+            });
+        });
+
+        socketService.on('card:updated', ({ cardId, updates }) => {
+            setCards(prev => prev.map(c => c._id === cardId ? { ...c, ...updates } : c));
+        });
+
+        socketService.on('card:deleted', ({ cardId }) => {
+            setCards(prev => prev.filter(c => c._id !== cardId));
+        });
+
+        socketService.on('column:created', ({ column }) => {
+            setColumns(prev => [...prev, column]);
+        });
+
+        socketService.on('column:deleted', ({ columnId }) => {
+            setColumns(prev => prev.filter(c => c._id !== columnId));
+        });
+
+        return () => {
+            if (boardId) {
+                socketService.leaveBoard(boardId);
+            }
+            socketService.disconnect();
+        };
     }, [boardId]);
 
     const fetchBoardData = async () => {
@@ -216,6 +283,70 @@ const Board = () => {
             console.error(error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleCreateColumn = async (e) => {
+        e.preventDefault();
+        try {
+            const response = await api.post('/columns', {
+                title: newColumnTitle,
+                boardId,
+                position: (columns.length + 1) * 1000
+            });
+            setColumns([...columns, response.data.data.column]);
+            setNewColumnTitle('');
+            setIsColumnModalOpen(false);
+            toast.success('List added');
+        } catch (error) {
+            toast.error('Failed to add list');
+        }
+    };
+
+    const handleCreateCard = async (e) => {
+        e.preventDefault();
+        try {
+            const columnCards = cards.filter(c => c.column === selectedColumnId);
+            const response = await api.post('/cards', {
+                title: newCardTitle,
+                columnId: selectedColumnId,
+                boardId,
+                position: (columnCards.length + 1) * 1000
+            });
+            setCards([...cards, response.data.data.card]);
+            setNewCardTitle('');
+            setIsCardModalOpen(false);
+            toast.success('Card added');
+        } catch (error) {
+            toast.error('Failed to add card');
+        }
+    };
+
+    const handleDeleteColumn = async (columnId) => {
+        if (!window.confirm('Are you sure you want to delete this list? All cards in it will be deleted.')) return;
+        try {
+            await api.delete(`/columns/${columnId}`);
+            setColumns(prev => prev.filter(c => c._id !== columnId));
+            toast.success('List deleted');
+        } catch (error) {
+            toast.error('Failed to delete list');
+        }
+    };
+
+    const openCardModal = (columnId) => {
+        setSelectedColumnId(columnId);
+        setIsCardModalOpen(true);
+    };
+
+    const handleCardClick = (card) => {
+        setSelectedCardId(card._id);
+    };
+
+    const handleCardUpdate = (updatedCard, deletedCardId) => {
+        if (deletedCardId) {
+            setCards(prev => prev.filter(c => c._id !== deletedCardId));
+        } else if (updatedCard) {
+            setCards(prev => prev.map(c => c._id === updatedCard._id ? updatedCard : c));
         }
     };
 
@@ -381,13 +512,19 @@ const Board = () => {
                                     key={column._id}
                                     column={column}
                                     cards={cards.filter(c => c.column === column._id)}
+                                    onAddCard={openCardModal}
+                                    onCardClick={handleCardClick}
+                                    onDeleteColumn={handleDeleteColumn}
                                 />
                             ))}
                         </SortableContext>
 
                         {/* Add Column Button */}
                         <div className="flex-shrink-0 w-72">
-                            <button className="w-full bg-white/50 hover:bg-white/80 backdrop-blur-sm border-2 border-dashed border-gray-300/50 hover:border-purple-400 rounded-xl p-4 flex items-center justify-center gap-2 text-gray-600 font-medium transition-all group">
+                            <button
+                                onClick={() => setIsColumnModalOpen(true)}
+                                className="w-full bg-white/50 hover:bg-white/80 backdrop-blur-sm border-2 border-dashed border-gray-300/50 hover:border-purple-400 rounded-xl p-4 flex items-center justify-center gap-2 text-gray-600 font-medium transition-all group"
+                            >
                                 <Plus className="w-5 h-5 group-hover:text-purple-600" />
                                 Add another list
                             </button>
@@ -401,13 +538,98 @@ const Board = () => {
                             <Column
                                 column={activeDragItem.item}
                                 cards={cards.filter(c => c.column === activeDragItem.item._id)}
+                                onAddCard={() => { }}
+                                onCardClick={() => { }}
+                                onDeleteColumn={() => { }}
                             />
                         ) : (
-                            <Card card={activeDragItem.item} />
+                            <Card card={activeDragItem.item} onClick={() => { }} />
                         )
                     ) : null}
                 </DragOverlay>
             </DndContext>
+
+            {/* Create Column Modal */}
+            <Modal
+                isOpen={isColumnModalOpen}
+                onClose={() => setIsColumnModalOpen(false)}
+                title="Add List"
+            >
+                <form onSubmit={handleCreateColumn} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">List Title</label>
+                        <input
+                            type="text"
+                            value={newColumnTitle}
+                            onChange={(e) => setNewColumnTitle(e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
+                            placeholder="e.g., To Do"
+                            required
+                            autoFocus
+                        />
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button
+                            type="button"
+                            onClick={() => setIsColumnModalOpen(false)}
+                            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            className="px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
+                        >
+                            Add List
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Create Card Modal */}
+            <Modal
+                isOpen={isCardModalOpen}
+                onClose={() => setIsCardModalOpen(false)}
+                title="Add Card"
+            >
+                <form onSubmit={handleCreateCard} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Card Title</label>
+                        <input
+                            type="text"
+                            value={newCardTitle}
+                            onChange={(e) => setNewCardTitle(e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all"
+                            placeholder="e.g., Fix login bug"
+                            required
+                            autoFocus
+                        />
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button
+                            type="button"
+                            onClick={() => setIsCardModalOpen(false)}
+                            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            className="px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
+                        >
+                            Add Card
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Card Details Modal */}
+            <CardModal
+                cardId={selectedCardId}
+                isOpen={!!selectedCardId}
+                onClose={() => setSelectedCardId(null)}
+                onUpdate={handleCardUpdate}
+            />
         </div>
     );
 };
