@@ -45,7 +45,17 @@ const workspaceSchema = new mongoose.Schema({
     }
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Reverse populate with virtuals
+workspaceSchema.virtual('boards', {
+  ref: 'Board',
+  localField: '_id',
+  foreignField: 'workspace',
+  justOne: false
 });
 
 // Index for faster queries

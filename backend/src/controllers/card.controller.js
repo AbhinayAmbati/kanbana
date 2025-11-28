@@ -19,8 +19,8 @@ exports.getCards = async (req, res, next) => {
     }
 
     const cards = await Card.find({ board: boardId })
-      .populate('assignees', 'name avatar')
-      .populate('labels')
+      .populate('assignedTo', 'name avatar')
+      .populate('createdBy', 'name avatar')
       .sort('position');
 
     res.status(200).json({
@@ -55,8 +55,8 @@ exports.createCard = async (req, res, next) => {
       board: boardId,
       position,
       priority: priority || 'medium',
-      assignees: assignees || [],
-      reporter: req.user._id
+      assignedTo: assignees || [],
+      createdBy: req.user._id
     });
 
     // Create activity

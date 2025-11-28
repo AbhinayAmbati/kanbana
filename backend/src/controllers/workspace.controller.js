@@ -10,7 +10,9 @@ exports.getWorkspaces = async (req, res, next) => {
   try {
     const workspaces = await Workspace.find({
       'members.user': req.user._id
-    }).sort('-createdAt');
+    })
+    .populate('boards')
+    .sort('-createdAt');
 
     res.status(200).json({
       status: 'success',

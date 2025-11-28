@@ -461,9 +461,9 @@ const Board = () => {
         <div
             className="h-screen flex flex-col bg-cover bg-center"
             style={{
-                backgroundImage: board?.background?.startsWith('http')
-                    ? `url(${board.background})`
-                    : 'linear-gradient(to bottom right, #f3f4f6, #e5e7eb)'
+                backgroundImage: board?.background?.type === 'image'
+                    ? `url(${board.background.value})`
+                    : board?.background?.value || 'linear-gradient(to bottom right, #f3f4f6, #e5e7eb)'
             }}
         >
             {/* Board Header */}

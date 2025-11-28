@@ -8,7 +8,12 @@ class SocketService {
     connect() {
         if (this.socket) return;
 
+        const token = localStorage.getItem('token');
+        
         this.socket = io(SOCKET_URL, {
+            auth: {
+                token
+            },
             withCredentials: true,
             transports: ['websocket', 'polling']
         });
